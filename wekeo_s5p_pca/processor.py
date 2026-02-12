@@ -29,7 +29,13 @@ def preprocess_invalid_data_nan(ds, fill_value=-9999):
         if var in ds:
             # Replace NaN values with fill_value
             ds[var] = ds[var].where(~np.isnan(ds[var]), fill_value)
-            
+    
+    # Set to NaN where processing_flag has 16 (south_atlantic_anomaly)
+    ds = ds.where(
+        (ds.processing_flag.astype(np.uint8) & 16) == 0,
+        other=np.nan
+    )
+    
     return ds
     
 
@@ -217,7 +223,7 @@ def postprocess(ds: xr.Dataset):
     """
 
     # variables to remove after the computation of the final fields
-    tmp_vars = [s for s in list(ds.data_vars) if s.endswith('_mean') or s.endswith('_count')]
+    # tmp_vars = [s for s in list(ds.data_vars) if s.endswith('_count')]
 
     ds["mean_score_CO"] = (ds["score_CO_1_mean"] + ds["score_CO_2_mean"] + ds["score_CO_3_mean"]) / 3.0
     ds["mean_diag_CO"]  = (ds["diag_CO_1_mean"] + ds["diag_CO_2_mean"] + ds["diag_CO_3_mean"]) / 3.0
@@ -226,6 +232,6 @@ def postprocess(ds: xr.Dataset):
     ds["nb_samples"] = ds["score_CO_1_count"]  # all count fields should be the same, so we can just take one of them
     ds["mean_nb_detect"] = ds["nb_detect_mean"]     # rename
     
-    ds.drop_vars(tmp_vars, errors='ignore')
+    # ds.drop_vars(tmp_vars, errors='ignore')
     
     return ds
