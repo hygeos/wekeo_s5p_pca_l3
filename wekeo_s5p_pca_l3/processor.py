@@ -32,7 +32,7 @@ def preprocess_invalid_data_nan(ds, fill_value=-9999):
     
     # Set to NaN where processing_flag has 16 (south_atlantic_anomaly)
     ds = ds.where(
-        (ds.processing_flag.astype(np.uint8) & 16) == 0,
+        (ds.processing_flag.astype(np.uint8) != 1),
         other=np.nan
     )
     
