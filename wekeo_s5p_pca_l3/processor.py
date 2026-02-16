@@ -4,7 +4,7 @@ import numpy as np
 class thresholds:
     score_CO_1 = 0.405
     score_CO_2 = 0.516
-    score_CO_3 = 0.627 # TODO; NOTE: randomly chosen, needs to be determined properly
+    score_CO_3 = 0.405
     
    
 variables_to_reproject = [
@@ -32,7 +32,7 @@ def preprocess_invalid_data_nan(ds, fill_value=-9999):
     
     # Set to NaN where processing_flag has 16 (south_atlantic_anomaly)
     ds = ds.where(
-        (ds.processing_flag.astype(np.uint8) != 1),
+        (ds.processing_flag.astype(np.uint8) == 0),
         other=np.nan
     )
     
