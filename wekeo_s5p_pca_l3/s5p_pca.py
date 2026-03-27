@@ -315,6 +315,9 @@ def get_gridded_s5p_pca_l3(
     )
     ds = postprocess(ds)
     
+    ds.attrs["date"] = day
+    ds.attrs["version"] = version
+    
     if save_result:
         print(f"Saving gridded dataset to {output_file}")
         ds.to_netcdf(output_file)
