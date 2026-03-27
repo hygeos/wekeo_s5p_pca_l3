@@ -1,6 +1,9 @@
 import xarray as xr
 import numpy as np
 
+from wekeo_s5p_pca_l3 import config
+from wekeo_s5p_pca_l3.hygeos_core import log
+
 class thresholds:
     score_CO_1 = 0.405
     score_CO_2 = 0.516
@@ -160,40 +163,40 @@ def accumulate_to_grid(
         np.add.at(count_grid, (lat_idx_valid, lon_idx_valid), 1)
 
         # Initialize min/max grids with appropriate values
-        min_grid = np.full((height, width), np.inf, dtype=np.float32)
-        max_grid = np.full((height, width), -np.inf, dtype=np.float32)
+        # min_grid = np.full((height, width), np.inf, dtype=np.float32)
+        # max_grid = np.full((height, width), -np.inf, dtype=np.float32)
 
         # Accumulate min/max values directly
-        np.minimum.at(min_grid, (lat_idx_valid, lon_idx_valid), data_valid)
-        np.maximum.at(max_grid, (lat_idx_valid, lon_idx_valid), data_valid)
+        # np.minimum.at(min_grid, (lat_idx_valid, lon_idx_valid), data_valid)
+        # np.maximum.at(max_grid, (lat_idx_valid, lon_idx_valid), data_valid)
         
         # Compute mean and std
         mask = count_grid > 0
         mean_grid = np.full((height, width), np.nan, dtype=np.float32)
-        std_grid = np.full((height, width), np.nan, dtype=np.float32)
+        # std_grid = np.full((height, width), np.nan, dtype=np.float32)
         mean_grid[mask] = (sum_grid[mask] / count_grid[mask]).astype(np.float32)
         
-        # std = sqrt(E[X^2] - E[X]^2)
-        mean_sq = sum_sq_grid[mask] / count_grid[mask]
-        std_grid[mask] = np.sqrt(np.maximum(0, mean_sq - mean_grid[mask]**2)).astype(np.float32)
+        # NOTE: std = sqrt(E[X^2] - E[X]^2)
+        # mean_sq = sum_sq_grid[mask] / count_grid[mask]
+        # std_grid[mask] = np.sqrt(np.maximum(0, mean_sq - mean_grid[mask]**2)).astype(np.float32)
         
         # Filter cells with insufficient data
         insufficient_data_mask = count_grid < min_count
         mean_grid[insufficient_data_mask] = np.nan
-        std_grid[insufficient_data_mask] = np.nan
-        min_grid[insufficient_data_mask] = np.nan
-        max_grid[insufficient_data_mask] = np.nan
+        # std_grid[insufficient_data_mask] = np.nan
+        # min_grid[insufficient_data_mask] = np.nan
+        # max_grid[insufficient_data_mask] = np.nan
         count_grid[insufficient_data_mask] = -1
         
         # Remove infs from min/max grids
-        min_grid[np.isinf(min_grid)] = np.nan
-        max_grid[np.isinf(max_grid)] = np.nan
+        # min_grid[np.isinf(min_grid)] = np.nan
+        # max_grid[np.isinf(max_grid)] = np.nan
         
         # Add to data_vars dictionary
         data_vars[f'{variable}_mean'] = (('latitude', 'longitude'), mean_grid)
         data_vars[f'{variable}_count'] = (('latitude', 'longitude'), count_grid)
         
-        # Unlike FRP only the mean and count are strictly necessary
+        # Unlike FRP only the mean and count are necessary
         # data_vars[f'{variable}_std'] = (('latitude', 'longitude'), std_grid)
         # data_vars[f'{variable}_min'] = (('latitude', 'longitude'), min_grid)
         # data_vars[f'{variable}_max'] = (('latitude', 'longitude'), max_grid)
@@ -229,9 +232,91 @@ def postprocess(ds: xr.Dataset):
     ds["mean_diag_CO"]  = (ds["diag_CO_1_mean"] + ds["diag_CO_2_mean"] + ds["diag_CO_3_mean"]) / 3.0
     ds["mean_cloud_fraction"] = ds["cloud_fraction_mean"]
     
-    ds["nb_samples"] = ds["score_CO_1_count"]  # all count fields should be the same, so we can just take one of them
-    ds["mean_nb_detect"] = ds["nb_detect_mean"]     # rename
+    # get all _count variables
+    count_vars = [s for s in list(ds.data_vars) if s.endswith('_count')]
     
-    # ds.drop_vars(tmp_vars, errors='ignore')
+    # check if all the rasters are equal (they should be for this product)
+    # cross compare 
+    equal = True
+    for x in range(len(count_vars)):
+        for y in range(x+1, len(count_vars)):
+            first = count_vars[x]
+            other = count_vars[y]
+            if not np.array_equal(ds[first].values, ds[other].values):
+                log.warning(f"Count rasters are not equal: {first} and {other}")
+                equal = False
+    
+    if equal:
+        log.info("All count rasters are equal, keeping only one and renaming it to nb_samples")
+        # drop all counts
+        ds["nb_samples"] = ds["score_CO_1_count"]  # all count fields should be the same, so we can just take one of them
+        ds = ds.drop_vars(count_vars)
+    
+    ds["mean_detection"] = ds["nb_detect_mean"]     # rename
+    
+    return ds
+
+
+
+def get_gridded_s5p_pca_l3(
+    dataset: xr.Dataset,
+    width: int,
+    lat_name: str = "latitude",
+    lon_name: str = "longitude",
+    min_count: int = 1,
+    save_result: bool = False,
+    use_cache: bool = False,
+) -> xr.Dataset:
+    """
+    Process the input S5P PCA dataset to produce a gridded L3 dataset with accumulated statistics.
+    
+    Parameters
+    ----------
+    dataset : xr.Dataset
+        Input dataset containing the detection data with dimensions (time, scanline, ground_pixel)
+    width : int
+        Width of the output grid (longitude bins)
+    lat_name : str, optional
+        Name of the latitude variable in the dataset (default: "latitude")
+    lon_name : str, optional
+        Name of the longitude variable in the dataset (default: "longitude")
+    min_count : int, optional
+        Minimum number of observations required per grid cell to compute statistics
+    save_result : bool, optional
+        Whether to save the resulting gridded dataset to disk (default: False)
+    use_cache : bool, optional
+        Whether to use cached results if available (default: False)
+    
+    Returns
+    -------
+    xr.Dataset
+        Gridded L3 S5P PCA dataset with accumulated statistics per grid cell
+    """
+    
+    version = "v1"
+    
+    if type(dataset) is not xr.Dataset:
+        dataset = xr.open_dataset(dataset)
+    
+    day = str(np.mean(dataset.time).values)[:10] # TODO CHECK
+    
+    output_file = config.gridded_s5p_pca_dir / f"S5P_PCA_grid{width}_mc{min_count}__{day}__{version}.nc"
+    if use_cache and output_file.exists():
+        print(f"Loading cached gridded dataset from {output_file}")
+        return xr.load_dataset(output_file)
+    
+    ds = preprocess(dataset)
+    ds = accumulate_to_grid(
+        ds,
+        width=width,
+        lat_name=lat_name,
+        lon_name=lon_name,
+        min_count=min_count,
+    )
+    ds = postprocess(ds)
+    
+    if save_result:
+        print(f"Saving gridded dataset to {output_file}")
+        ds.to_netcdf(output_file)
     
     return ds
