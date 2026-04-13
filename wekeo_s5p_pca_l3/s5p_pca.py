@@ -5,10 +5,14 @@ from wekeo_s5p_pca_l3 import config
 from wekeo_s5p_pca_l3.hygeos_core import log
 
 class thresholds:
-    score_CO_1 = 0.405
-    score_CO_2 = 0.516
-    score_CO_3 = 0.405
-    
+    # score_CO_1 = 0.405
+    # score_CO_2 = 0.516
+    # score_CO_3 = 0.405
+
+    # SP
+    score_CO_1 = 0.352 # seuils calcules sur mois juillet 2022 avec tol = 5
+    score_CO_2 = 0.351
+    score_CO_3 = 0.315      
    
 variables_to_reproject = [
     "cloud_fraction",
@@ -60,8 +64,18 @@ def preprocess_detection(ds, min_detection=1):
     ds["nb_detect"] += (ds.score_CO_2 > thresholds.score_CO_2).astype(np.uint8)
     ds["nb_detect"] += (ds.score_CO_3 > thresholds.score_CO_3).astype(np.uint8)
     
+    # SP modifs
+    filt_CO_1 = ds.score_CO_1 > thresholds.score_CO_1
+    filt_CO_2 = ds.score_CO_2 > thresholds.score_CO_2
+    filt_CO_3 = ds.score_CO_3 > thresholds.score_CO_3
+    filt = (filt_CO_1 & filt_CO_2) | (filt_CO_3 & (filt_CO_1 | filt_CO_2)) 
+    
+    ds = ds.where(filt)
+
+    
     # Filter out detections that do not meet the minimum detection requirement
-    ds = ds.where(ds["nb_detect"] >= min_detection)
+    #SP
+    # ds = ds.where(ds["nb_detect"] >= min_detection)
     
     return ds
     
@@ -293,7 +307,7 @@ def get_gridded_s5p_pca_l3(
         Gridded L3 S5P PCA dataset with accumulated statistics per grid cell
     """
     
-    version = "v1"
+    version = "v2" # invalidate v1 since we changed the process.
     
     if type(dataset) is not xr.Dataset:
         dataset = xr.open_dataset(dataset)
