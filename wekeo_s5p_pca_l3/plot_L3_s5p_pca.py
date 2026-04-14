@@ -64,14 +64,15 @@ def plot_L3_s5p_pca(
     --------
     fig, ax : matplotlib figure and axes objects
     """
+    
+    variable = prefix + variable # add prefix to variable name if provided
+    
     # Validate variable exists in dataset
     if variable not in dataset.data_vars:
         raise ValueError(
             f"Variable '{variable}' not found in dataset. "
             f"Available variables: {list(dataset.data_vars)}"
         )
-    
-    variable = prefix + variable # add prefix to variable name if provided
     
     # Extract data
     data = dataset[variable]
