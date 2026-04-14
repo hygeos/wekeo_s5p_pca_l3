@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import xarray as xr
 import numpy as np
 
@@ -273,7 +275,7 @@ def postprocess(ds: xr.Dataset):
 
 
 def get_gridded_s5p_pca_l3(
-    dataset: xr.Dataset,
+    dataset: xr.Dataset | str | Path,
     width: int,
     lat_name: str = "latitude",
     lon_name: str = "longitude",
@@ -310,7 +312,7 @@ def get_gridded_s5p_pca_l3(
     version = "v2" # invalidate v1 since we changed the process.
     
     if type(dataset) is not xr.Dataset:
-        dataset = xr.open_dataset(dataset)
+        dataset = xr.open_dataset(Path(dataset))
     
     day = str(np.mean(dataset.time).values)[:10] # TODO CHECK
     
